@@ -1,69 +1,76 @@
 <script>
 (function() {
-    window.pendingPurchase = window.pendingPurchase || null;
-
+    window.gtmPendingCart = window.gtmPendingCart || null;
     var origSend = XMLHttpRequest.prototype.send;
 
     XMLHttpRequest.prototype.send = function(body) {
+        var requestData = {};
+        
+        try {
+            if (typeof body === 'string') {
+                var params = new URLSearchParams(body);
+                params.forEach(function(value, key) {
+                    requestData[key] = value;
+                });
+            } else if (body instanceof FormData) {
+                body.forEach(function(value, key) {
+                    requestData[key] = value;
+                });
+            }
+        } catch (e) {}
+
         this.addEventListener('load', function() {
             try {
                 if (this.responseURL && this.responseURL.indexOf('ajax.php') !== -1 && this.status === 200) {
                     
-                    if (typeof body === 'string') {
-                        var params = new URLSearchParams(body);
-                        var action = params.get('action');
-                        if (action === 'websatis_kaydet') {
-                            var email = params.get('email');
-                            var sepetRaw = params.get('sepet');
+                    if (requestData['action'] === 'websatis_kaydet') {
+                        var email = requestData['email'];
+                        var sepetRaw = requestData['sepet'];
 
-                            if (sepetRaw) {
-                                try {
-                                    var sepetJson = JSON.parse(sepetRaw);
-                                    var totalValue = 0;
-                                    var items = sepetJson.map(function(item) {
-                                        var price = parseFloat(item.fiyat);
-                                        var qty = parseInt(item.adet) || 1;
-                                        totalValue += price * qty;
+                        if (sepetRaw) {
+                            var sepetJson = typeof sepetRaw === 'string' ? JSON.parse(sepetRaw) : sepetRaw;
+                            var totalValue = 0;
+                            
+                            var items = sepetJson.map(function(item) {
+                                var price = parseFloat(item.fiyat);
+                                var qty = parseInt(item.adet) || 1;
+                                totalValue += price * qty;
 
-                                        return {
-                                            'item_id': item.urun_id,
-                                            'price': price,
-                                            'quantity': qty
-                                        };
-                                    });
-                                    window.pendingPurchase = {
-                                        email: email,
-                                        items: items,
-                                        value: totalValue
-                                    };
-                                } catch (err) {
-                                    console.error('GTM Sepet Parse Hatasi:', err);
-                                }
-                            }
+                                return {
+                                    'item_id': item.urun_id,
+                                    'price': price,
+                                    'quantity': qty
+                                };
+                            });
+
+                            window.gtmPendingCart = {
+                                email: email,
+                                items: items,
+                                value: totalValue
+                            };
                         }
-                        if (action === 'encrypt') {
-                            var siparisNo = params.get('siparis_no');
-                            if (siparisNo && window.pendingPurchase) {
-                                
-                                window.dataLayer = window.dataLayer || [];
-                                window.dataLayer.push({
-                                    'event': 'purchase',
-                                    'userEmail': window.pendingPurchase.email, // Enhanced Conversion icin
-                                    'ecommerce': {
-                                        'transaction_id': siparisNo,
-                                        'value': window.pendingPurchase.value,
-                                        'currency': 'TRY',
-                                        'items': window.pendingPurchase.items
-                                    }
-                                });
-                                window.pendingPurchase = null;
-                            }
+                    }
+
+                    if (requestData['action'] === 'encrypt') {
+                        var siparisNo = requestData['siparis_no'];
+
+                        if (siparisNo && window.gtmPendingCart) {
+                            window.dataLayer = window.dataLayer || [];
+                            window.dataLayer.push({
+                                'event': 'purchase',
+                                'userEmail': window.gtmPendingCart.email,
+                                'ecommerce': {
+                                    'transaction_id': siparisNo,
+                                    'value': window.gtmPendingCart.value,
+                                    'currency': 'TRY',
+                                    'items': window.gtmPendingCart.items
+                                }
+                            });
+                            window.gtmPendingCart = null;
                         }
                     }
                 }
-            } catch (e) {
-                console.error('GTM Listener Error:', e);
-            }
+            } catch (e) {}
         });
 
         origSend.apply(this, arguments);
