@@ -1,0 +1,72 @@
+<script>
+(function() {
+    window.pendingPurchase = window.pendingPurchase || null;
+
+    var origSend = XMLHttpRequest.prototype.send;
+
+    XMLHttpRequest.prototype.send = function(body) {
+        this.addEventListener('load', function() {
+            try {
+                if (this.responseURL && this.responseURL.indexOf('ajax.php') !== -1 && this.status === 200) {
+                    
+                    if (typeof body === 'string') {
+                        var params = new URLSearchParams(body);
+                        var action = params.get('action');
+                        if (action === 'websatis_kaydet') {
+                            var email = params.get('email');
+                            var sepetRaw = params.get('sepet');
+
+                            if (sepetRaw) {
+                                try {
+                                    var sepetJson = JSON.parse(sepetRaw);
+                                    var totalValue = 0;
+                                    var items = sepetJson.map(function(item) {
+                                        var price = parseFloat(item.fiyat);
+                                        var qty = parseInt(item.adet) || 1;
+                                        totalValue += price * qty;
+
+                                        return {
+                                            'item_id': item.urun_id,
+                                            'price': price,
+                                            'quantity': qty
+                                        };
+                                    });
+                                    window.pendingPurchase = {
+                                        email: email,
+                                        items: items,
+                                        value: totalValue
+                                    };
+                                } catch (err) {
+                                    console.error('GTM Sepet Parse Hatasi:', err);
+                                }
+                            }
+                        }
+                        if (action === 'encrypt') {
+                            var siparisNo = params.get('siparis_no');
+                            if (siparisNo && window.pendingPurchase) {
+                                
+                                window.dataLayer = window.dataLayer || [];
+                                window.dataLayer.push({
+                                    'event': 'purchase',
+                                    'userEmail': window.pendingPurchase.email, // Enhanced Conversion icin
+                                    'ecommerce': {
+                                        'transaction_id': siparisNo,
+                                        'value': window.pendingPurchase.value,
+                                        'currency': 'TRY',
+                                        'items': window.pendingPurchase.items
+                                    }
+                                });
+                                window.pendingPurchase = null;
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('GTM Listener Error:', e);
+            }
+        });
+
+        origSend.apply(this, arguments);
+    };
+})();
+</script>
